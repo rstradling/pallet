@@ -539,6 +539,28 @@
 (script/defimpl list-installed-packages [#{:aptitude}] [& options]
   (aptitude search (quoted "~i")))
 
+;;; pkgin 
+(script/defimpl update-package-list [#{:pkgin}] [& {:keys [enable disable]}]
+  (pkgin update ~(stevedore/option-args options)))
+
+(script/defimpl upgrade-all-packages [#{:pkgin}] [& options]
+  (pkgin full-upgrade ~(stevedore/option-args options)))
+
+(script/defimpl install-package [#{:pkgin}] [package & options]
+  (pkgin install -y ~(stevedore/option-args options) ~package))
+
+(script/defimpl upgrade-package [#{:pkgin}] [package & options]
+  (pkgin upgrade -y ~(stevedore/option-args options) ~package))
+
+(script/defimpl remove-package [#{:pkgin}] [package & options]
+  (pkgin remove ~(stevedore/option-args options) ~package))
+
+(script/defimpl purge-package [#{:pkgin}] [package & options]
+  (pkgin clean ~(stevedore/option-args options) ~package))
+
+(script/defimpl list-installed-packages [#{:pkgin}] [& options]
+  (pkgin list))
+
 ;;; apt
 (script/defimpl update-package-list [#{:apt}] [& {:keys [] :as options}]
   (apt-get -qq ~(stevedore/map-to-arg-string options) update))

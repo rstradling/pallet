@@ -95,6 +95,7 @@
       (derive :suse-base :linux)
       (derive :bsd-base :linux)
       (derive :gentoo-base :linux)
+      (derive :system-v :linux)
 
       ;; distibutions
       (derive :centos :rh-base)
@@ -109,7 +110,8 @@
       (derive :arch :arch-base)
       (derive :gentoo :gentoo-base)
       (derive :darwin :bsd-base)
-      (derive :osx :bsd-base)))
+      (derive :osx :bsd-base)
+      (derive :sunos :system-v)))
 
 (defmacro defmulti-os
   "Defines a defmulti used to abstract over the target operating system. The
@@ -142,6 +144,7 @@
     (#{:centos :rhel :amzn-linux :fedora} os-family) :yum
     (#{:arch} os-family) :pacman
     (#{:suse} os-family) :zypper
+    (#{:sunos :system-v} os-family) :pkgin
     (#{:gentoo} os-family) :portage
     (#{:darwin :os-x} os-family) :brew
     :else (throw+
@@ -161,6 +164,7 @@
                                  :apt
                                  :aptitude))
       (#{:centos :rhel :amzn-linux :fedora} os-family) :yum
+      (#{:sunos :system-v} os-family) :pkgin
       (#{:arch} os-family) :pacman
       (#{:suse} os-family) :zypper
       (#{:gentoo} os-family) :portage
@@ -179,6 +183,7 @@
    (let [os-family (:os-family target)]
      (cond
       (#{:ubuntu :debian :jeos} os-family) :debian
+      (#{:sunos :system-v} os-family) :system-v
       (#{:centos :rhel :amzn-linux :fedora} os-family) :rh
       (#{:arch} os-family) :arch
       (#{:suse} os-family) :suse

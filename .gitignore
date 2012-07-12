@@ -7,3 +7,8 @@ snippets
 autodoc/**
 sitemap.org
 .ritz-exception-filters
+.idea
+*iml
+*swp
+*swo
+*swn

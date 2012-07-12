@@ -540,7 +540,7 @@
   (aptitude search (quoted "~i")))
 
 ;;; pkgin 
-(script/defimpl update-package-list [#{:pkgin}] [& {:keys [enable disable]}]
+(script/defimpl update-package-list [#{:pkgin}] [& {:keys [] :as options}]
   (pkgin update ~(stevedore/option-args options)))
 
 (script/defimpl upgrade-all-packages [#{:pkgin}] [& options]

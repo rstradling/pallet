@@ -1,6 +1,9 @@
 (ns pallet.compute-test
-  (:use pallet.compute)
-  (:use clojure.test)
+  (:use
+   pallet.compute
+   clojure.test)
+  (:require
+   slingshot.test)
   (:import slingshot.ExceptionInfo))
 
 (deftest packager-test
@@ -29,5 +32,4 @@
   (is (= :rh-base (testos {:server {:image {:os-family :centos}}})))
   (is (= :debian (testos {:server {:image {:os-family :debian}}})))
   (is (= :system-v (testos {:server {:image {:os-family :sunos}}})))
-  (is (thrown? slingshot.ExceptionInfo
-               (testos {:server {:image {:os-family :unspecified}}}))))
+  (is (thrown+? map? (testos {:server {:image {:os-family :unspecified}}}))))

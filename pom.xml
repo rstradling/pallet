@@ -102,6 +102,7 @@
     <dependency>
       <groupId>slingshot</groupId>
       <artifactId>slingshot</artifactId>
+      <version>0.10.3</version>
     </dependency>
     <dependency>
       <groupId>midje</groupId>
@@ -154,6 +155,11 @@
       <groupId>pallet-map-merge</groupId>
       <artifactId>pallet-map-merge</artifactId>
       <version>0.1.0</version>
+    </dependency>
+    <dependency>
+      <groupId>useful</groupId>
+      <artifactId>useful</artifactId>
+      <version>0.8.3-alpha7</version>
     </dependency>
 
     <dependency>

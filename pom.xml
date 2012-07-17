@@ -29,6 +29,7 @@
   </scm>
 
   <build>
+   <!-- <testSourceDirectory>test/pallet/actions/direct</testSourceDirectory> -->
     <resources>
       <resource>
         <directory>resources</directory>

@@ -156,6 +156,28 @@
             (distinct (map :package packages)))))))
      (stevedore/script (~lib/list-installed-packages))))))
 
+(defmethod adjust-packages :pkgin
+  [session packages]
+  (checked-commands
+    (stevedore/chain-commands*
+      (conj
+        (vec
+          (for [[action packages] (->> packages
+            (sort-by #(action-order (:action %)))
+            (group-by :action))
+                [opts packages] (->>
+              packages
+              (sort-by #(apply min (map :priority (second %)))))]
+            (stevedore/script
+              (pkgin
+                ~(name action) -y
+              ;  ~(string/join " " (map #(str "--disablerepo=" %) (:disable opts)))
+              ;  ~(string/join " " (map #(str "--enablerepo=" %) (:enable opts)))
+              ;  ~(string/join " " (map #(str "--exclude=" %) (:exclude opts)))
+                ~(string/join
+                   " "
+                   (distinct (map :package packages)))))))
+        (stevedore/script (~lib/list-installed-packages))))))
 
 (defmethod adjust-packages :default
   [session packages]
@@ -227,6 +249,15 @@
    (:url options)
    (:release options (stevedore/script (~lib/os-version-name)))
    (string/join " " (:scopes options ["main"]))))
+
+(defmethod format-source :pkgin
+  [_ name options]
+  (format
+    "%s %s %s %s\n"
+    (:source-type options "SunOS")
+    (:url options)
+    (:release options (stevedore/script (~lib/os-version-name)))
+    (string/join " " (:scopes options ["main"]))))
 
 (defmethod format-source :apt
   [_ name options]

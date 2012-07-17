@@ -541,22 +541,22 @@
 
 ;;; pkgin 
 (script/defimpl update-package-list [#{:pkgin}] [& {:keys [] :as options}]
-  (pkgin update ~(stevedore/option-args options)))
+  (pkgin -y update ~(stevedore/option-args options)))
 
 (script/defimpl upgrade-all-packages [#{:pkgin}] [& options]
-  (pkgin full-upgrade ~(stevedore/option-args options)))
+  (pkgin -y full-upgrade ~(stevedore/option-args options)))
 
 (script/defimpl install-package [#{:pkgin}] [package & options]
-  (pkgin install -y ~(stevedore/option-args options) ~package))
+  (pkgin -y install ~(stevedore/option-args options) ~package))
 
 (script/defimpl upgrade-package [#{:pkgin}] [package & options]
-  (pkgin upgrade -y ~(stevedore/option-args options) ~package))
+  (pkgin -y upgrade ~(stevedore/option-args options) ~package))
 
 (script/defimpl remove-package [#{:pkgin}] [package & options]
-  (pkgin remove ~(stevedore/option-args options) ~package))
+  (pkgin -y remove ~(stevedore/option-args options) ~package))
 
 (script/defimpl purge-package [#{:pkgin}] [package & options]
-  (pkgin clean ~(stevedore/option-args options) ~package))
+  (pkgin -y clean ~(stevedore/option-args options) ~package))
 
 (script/defimpl list-installed-packages [#{:pkgin}] [& options]
   (pkgin list))
@@ -759,7 +759,7 @@
   "/etc/default")
 (script/defimpl etc-default [#{:centos :rhel :amzn-linux :fedora}] []
   "/etc/sysconfig")
-(script/defimpl etc-default [#{:os-x :darwin}] []
+(script/defimpl etc-default [#{:os-x :darwin :sunos :system-v}] []
   "/etc/defaults")
 
 (script/defscript log-root [])

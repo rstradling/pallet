@@ -63,7 +63,6 @@
 	  ]
     (is (= first_item second_item))))
 
-  (comment
   (testing "yum"
     (is (= (first
             (build-actions
@@ -82,8 +81,6 @@
              (package "maven2" :action :upgrade)
              (package "git" :action :remove)
              (package "ruby" :action :remove :purge true))))))
-  )
-  (comment
   (testing "pacman"
     (is (= (first
             (build-actions
@@ -103,7 +100,6 @@
              (package "maven2" :action :upgrade)
              (package "git" :action :remove)
              (package "ruby" :action :remove :purge true))))))
-  )
   (testing "pkgin"
     (let
 	[first_item  (first
@@ -132,7 +128,7 @@ EOF
          (script/with-script-context [:aptitude]
            (stevedore/script (~lib/package-manager-non-interactive))))))
 
-(comment
+
 (deftest add-scope-test
   (is (= (stevedore/chained-script
           (set! tmpfile @(mktemp -t addscopeXXXX))
@@ -155,9 +151,8 @@ deb-src http://archive.ubuntu.com/ubuntu/ karmic main restricted"
              "multiverse \ndeb-src http://archive.ubuntu.com/ubuntu/ karmic "
              "main restricted  multiverse \n")
              (slurp (.getPath tmp))))
-      (.delete tmp)))))
+      (.delete tmp))))
 
-(comment
 (deftest package-manager*-test
   (is (= (stevedore/checked-script
           "package-manager multiverse "
@@ -174,9 +169,8 @@ deb-src http://archive.ubuntu.com/ubuntu/ karmic main restricted"
            true))
          (binding [pallet.action-plan/*defining-context* nil]
            (script/with-script-context [:aptitude]
-             (package-manager* ubuntu-session :update)))))))
+             (package-manager* ubuntu-session :update))))))
 
-(comment
 (deftest package-manager-update-test
   (testing "yum"
     (is (= (first
@@ -189,8 +183,7 @@ deb-src http://archive.ubuntu.com/ubuntu/ karmic main restricted"
             (build-actions
              {:server {:group-name :n :image {:os-family :centos}}}
              (package-manager :update :enable ["r1"])))))))
-)
-(comment
+
 (deftest package-manager-configure-test
   (testing "aptitude"
     (is (= (first
@@ -263,9 +256,7 @@ deb-src http://archive.ubuntu.com/ubuntu/ karmic main restricted"
                 {:server {:tag :n :image {:os-family :arch}}}
               (package-manager
                :configure :proxy "http://192.168.2.37:3182")))))))
-)
 
-(comment
   (deftest add-multiverse-example-test
   (is (=  (str
            (stevedore/checked-script
@@ -283,9 +274,8 @@ deb-src http://archive.ubuntu.com/ubuntu/ karmic main restricted"
                   {}
                   (package-manager :multiverse)
                   (package-manager :update))))))
-)
 
-(comment (deftest package-source*-test
+(deftest package-source*-test
   (let [a (group-spec "a" :packager :aptitude)
         b (group-spec "b" :packager :yum :image {:os-family :centos})]
     (is (=
@@ -373,9 +363,9 @@ deb-src http://archive.ubuntu.com/ubuntu/ karmic main restricted"
                            :scopes ["main"]
                            :key-server "keys.ubuntu.com"
                            :key-id 1234}
-                :yum {:url "http://somewhere/yum"})))))))
+                :yum {:url "http://somewhere/yum"}))))))
 
-(comment (deftest package-source-test
+(deftest package-source-test
   (let [a (group-spec "a" :packager :aptitude)
         b (group-spec "b" :packager :yum :image {:os-family :centos})]
     (is (= (stevedore/checked-commands
@@ -410,9 +400,7 @@ deb-src http://archive.ubuntu.com/ubuntu/ karmic main restricted"
                      :aptitude {:url "http://somewhere/apt"
                                 :scopes ["main"]}
                      :yum {:url "http://somewhere/yum"}))))))))
-)
 
-(comment
 (deftest packages-test
   (let [a (group-spec "a" :packager :aptitude)
         b (group-spec "b" :packager :yum)]
@@ -432,9 +420,8 @@ deb-src http://archive.ubuntu.com/ubuntu/ karmic main restricted"
            (first (build-actions centos-session
                     (packages
                      :aptitude ["git-apt"]
-                     :yum ["git-yum"]))))))))
+                     :yum ["git-yum"])))))))
 
-(comment
 (deftest ordering-test
   (testing "package-source alway precedes packages"
     (is (= (first
@@ -473,9 +460,8 @@ deb-src http://archive.ubuntu.com/ubuntu/ karmic main restricted"
              (package "p")
              (package-manager :update)
              (package-source "s" :aptitude {:url "http://somewhere/apt"})))))))
-)
 
-(comment (deftest adjust-packages-test
+(deftest adjust-packages-test
   (testing "aptitude"
     (script/with-script-context [:aptitude]
       (is (= (stevedore/checked-script
@@ -555,7 +541,7 @@ deb-src http://archive.ubuntu.com/ubuntu/ karmic main restricted"
            (first
             (build-actions centos-session
               (package "p1")
-              (package "p2" :disable ["r1"] :priority 25))))))))
+              (package "p2" :disable ["r1"] :priority 25)))))))
 
 (deftest add-rpm-test
   (is (=

@@ -158,16 +158,20 @@
 
 (defmethod adjust-packages :pkgin
   [session packages]
+  (println "%%%%%%%%%%%%%%%%%%%%%%%%%%%")
+  (println "packages = " packages)
+  (println "session = " session)
   (checked-commands
     (stevedore/chain-commands*
       (conj
         (vec
           (for [[action packages] (->> packages
-            (sort-by #(action-order (:action %)))
-            (group-by :action))
+				       (sort-by #(action-order (:action %)))
+				       (group-by :action))
                 [opts packages] (->>
-              packages
-              (sort-by #(apply min (map :priority (second %)))))]
+				 packages
+				 (group-by
+				  #(select-keys % [:enable :disable :exclude]))				 		 (sort-by #(apply min (map :priority (second %)))))]
             (stevedore/script
               (pkgin
                 ~(name action) -y
@@ -229,6 +233,7 @@
    :location :target}
   [session & args]
   [[{:language :bash}
+    (println "************************")
     (adjust-packages session (map #(apply package-map session %) args))]
    session])
 
@@ -252,6 +257,7 @@
 
 (defmethod format-source :pkgin
   [_ name options]
+  (println "########### format-source " name options)
   (format
     "%s %s %s %s\n"
     (:source-type options "SunOS")
@@ -287,7 +293,9 @@
 (defn package-source*
   "Add a packager source."
   [session name & {:keys [apt aptitude yum] :as options}]
-  (let [packager (packager session)]
+  (let [packager (packager session)
+        _ (println "^^^^^^^^^^^^")
+        ]
     (checked-commands
      "Package source"
      (let [key-url (or (:url aptitude) (:url apt))]

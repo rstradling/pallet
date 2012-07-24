@@ -76,6 +76,7 @@ list, Alan Dipert and MeikelBrandmeyer."
 (defn make-node
   "Simple node for testing"
   [node-name & {:as options}]
+  (println "$OPTIONS " node-name " " options)
   (apply-map
    node-list/make-node
    node-name

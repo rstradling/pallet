@@ -39,9 +39,8 @@
 (def sed* (action-fn sed :direct))
 
 (deftest test-install-example
-  (comment
-    (testing "aptitude"
-    (is (= (first
+  (testing "aptitude"
+    (let [first_item (first
             (build-actions
              {}
              (exec-checked-script
@@ -52,14 +51,18 @@
               "aptitude search \"?and(?installed, ?name(^rubygems$))\" | grep \"rubygems\""
               "! ( aptitude search \"?and(?installed, ?name(^git$))\" | grep \"git\" )"
               "! ( aptitude search \"?and(?installed, ?name(^ruby$))\" | grep \"ruby\" )")))
-           (first
+	  second_item            (first
             (build-actions
              {}
              (package "java" :action :install)
              (package "rubygems")
              (package "git" :action :remove)
-             (package "ruby" :action :remove :purge true))))))
-  )
+             (package "ruby" :action :remove :purge true)))
+	  _ (println "Aptitude First " first_item)
+	  _ (println "Aptitude Second " second_item)
+	  ]
+    (is (= first_item second_item))))
+
   (comment
   (testing "yum"
     (is (= (first
@@ -102,22 +105,23 @@
              (package "ruby" :action :remove :purge true))))))
   )
   (testing "pkgin"
-    (is (= (first
+    (let
+	[first_item  (first
+            (build-actions
+              {:server {:tag :n :image {:os-family :sunos}}}
+              (package "java" :action :install)))
+
+	 second_item (first
              (build-actions
                {:server {:tag :n :image {:os-family :sunos}}}
                (exec-checked-script
-                 "pkgin -y install java rubygems"
-                 "pkgin -y remove git ruby"
-                 "pkgin -y upgrade maven2"
-                 (pkgin list))))
-          (first
-            (build-actions
-              {:server {:tag :n :image {:os-family :sunos}}}
-              (package "java" :action :install)
-              (package "rubygems")
-              (package "maven2" :action :upgrade)
-              (package "git" :action :remove)
-              (package "ruby" :action :remove :purge true)))))))
+		"pkgin -y install java"
+		(pkgin list))))
+
+	 _ (println "FIRST ITEM " first_item)
+	 _ (println "SECOND ITEM " second_item)
+	 ]
+      (is (= first_item second_item)))))
 
 (deftest package-manager-non-interactive-test
   (is (= "{ debconf-set-selections <<EOF
@@ -151,8 +155,7 @@ deb-src http://archive.ubuntu.com/ubuntu/ karmic main restricted"
              "multiverse \ndeb-src http://archive.ubuntu.com/ubuntu/ karmic "
              "main restricted  multiverse \n")
              (slurp (.getPath tmp))))
-      (.delete tmp))))
-)
+      (.delete tmp)))))
 
 (comment
 (deftest package-manager*-test
@@ -171,7 +174,7 @@ deb-src http://archive.ubuntu.com/ubuntu/ karmic main restricted"
            true))
          (binding [pallet.action-plan/*defining-context* nil]
            (script/with-script-context [:aptitude]
-             (package-manager* ubuntu-session :update))))))
+             (package-manager* ubuntu-session :update)))))))
 
 (comment
 (deftest package-manager-update-test
@@ -406,7 +409,7 @@ deb-src http://archive.ubuntu.com/ubuntu/ karmic main restricted"
                      "source1"
                      :aptitude {:url "http://somewhere/apt"
                                 :scopes ["main"]}
-                     :yum {:url "http://somewhere/yum"})))))))
+                     :yum {:url "http://somewhere/yum"}))))))))
 )
 
 (comment
@@ -429,7 +432,7 @@ deb-src http://archive.ubuntu.com/ubuntu/ karmic main restricted"
            (first (build-actions centos-session
                     (packages
                      :aptitude ["git-apt"]
-                     :yum ["git-yum"])))))))
+                     :yum ["git-yum"]))))))))
 
 (comment
 (deftest ordering-test
@@ -552,7 +555,7 @@ deb-src http://archive.ubuntu.com/ubuntu/ karmic main restricted"
            (first
             (build-actions centos-session
               (package "p1")
-              (package "p2" :disable ["r1"] :priority 25)))))))
+              (package "p2" :disable ["r1"] :priority 25))))))))
 
 (deftest add-rpm-test
   (is (=

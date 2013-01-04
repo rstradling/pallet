@@ -23,6 +23,7 @@
   (:use
    [clojure.algo.monads :only [defmonad domonad m-seq m-map]]
    [clojure.set :only [union]]
+   [clojure.string :only [trim]]
    [clojure.stacktrace :only [print-cause-trace]]
    [pallet.context :only [with-context in-phase-context-scope]]
    [pallet.node-value :only [make-node-value set-node-value]]
@@ -80,7 +81,8 @@
 (def ^{:private true
        :no-doc true
        :doc "Set of executions that are delayed until translation time."}
-  delayed-execution? #{:delayed-crate-fn :aggregated-crate-fn})
+  delayed-execution?
+  #{:delayed-crate-fn :aggregated-crate-fn :collected-crate-fn})
 
 (defn action-map
   "Return an action map for the given `action` and `args`. The action map is an
@@ -134,7 +136,8 @@
   [action-plan action-map]
   {:pre [(or (nil? action-plan)
              (instance? clojure.lang.IPersistentStack action-plan))]}
-  (let [node-value-path (if (= :aggregated (action-map-execution action-map))
+  (let [node-value-path (if (#{:aggregated :collected}
+                             (action-map-execution action-map))
                           (or (find-node-value-path action-plan action-map)
                               (gensym "nv"))
                           (gensym "nv"))]
@@ -158,6 +161,23 @@
   [context]
   (when (seq context)
     (str (string/join ": " context) "\n")))
+
+(defmulti context-label
+  "Return a label for an action"
+  (fn [action] (action-execution action)))
+
+(defmethod context-label :default
+  [{:keys [context] :as action}]
+  (when-let [s (context-string context)]
+    (trim s)))
+
+(defmethod context-label :aggregated
+  [{:keys [context] :as action}]
+  (multi-context-string context))
+
+(defmethod context-label :collected
+  [{:keys [context] :as action}]
+  (multi-context-string context))
 
 (defn- action-plan?
   "Predicate for testing if action-plan is valid. An action-plan is either a
@@ -252,7 +272,8 @@
 
 (def ^{:private true} execution-ordering [:aggregated :in-sequence :collected])
 (def ^{:private true} execution-translations {:delayed-crate-fn :in-sequence
-                                              :aggregated-crate-fn :aggregated})
+                                              :aggregated-crate-fn :aggregated
+                                              :collected-crate-fn :collected})
 
 (defn- translate-execution
   [execution]

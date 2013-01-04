@@ -3,10 +3,16 @@
   (:require
    [clojure.string :as string]
    [pallet.core.plan-state :as plan-state]
-   [pallet.core.session :as session])
+   [pallet.core.session :as session]
+   [pallet.execute :as execute]
+   [pallet.node :as node])
   (:use
    [clojure.tools.macro :only [name-with-attributes]]
-   [pallet.action :only [declare-aggregated-crate-action declare-action]]
+   [pallet.action
+    :only [declare-action
+           declare-aggregated-crate-action
+           declare-collected-crate-action]]
+   [pallet.argument :only [delayed-fn]]
    [pallet.monad :only [phase-pipeline phase-pipeline-no-context
                         session-pipeline local-env let-s]]
    [pallet.utils :only [compiler-exception]]
@@ -74,10 +80,35 @@
          [~@args]
          (action# ~@args)))))
 
+(defmacro def-collect-plan-fn
+  "Define a crate function where arguments on successive calls are conjoined,
+   and passed to the function specified in the body."
+  {:arglists '[[name doc-string? attr-map? [params*] f]]
+   :indent 'defun}
+  [sym & args]
+  (let [[sym [args f & rest]] (name-with-attributes sym args)
+        id (gensym (name sym))]
+    (when (seq rest)
+      (throw (compiler-exception
+              (IllegalArgumentException.
+               (format
+                "Extra arguments passed to def-aggregate-crate-fn: %s"
+                (vec rest))))))
+    `(let [action# (declare-collected-crate-action '~sym ~f)]
+       (def-plan-fn ~sym
+         ;; ~(merge
+         ;;   {:execution :aggregated-crate-fn
+         ;;    :crate-fn-id (list 'quote id)
+         ;;    :action-name (list 'quote sym)}
+         ;;   (meta sym))
+         [~@args]
+         (action# ~@args)))))
+
 ;;; Multi-method for plan functions
 (defmacro defmulti-plan
   "Declare a multimethod for plan functions"
-  {:arglists '([name docstring? attr-map? dispatch-fn & options])}
+  {:arglists '([name docstring? attr-map? dispatch-fn
+                & {:keys [hierarchy] :as options}])}
   [name & args]
   (let [[docstring args] (if (string? (first args))
                            [(first args) (rest args)]
@@ -86,6 +117,8 @@
                           [(first args) (rest args)]
                           [nil args])
         dispatch-fn (first args)
+        {:keys [hierarchy]
+         :or {hierarchy #'clojure.core/global-hierarchy}} (rest args)
         args (first (filter vector? dispatch-fn))]
     `(let [a# (atom {})]
        (def
@@ -96,7 +129,12 @@
            (let [df# ((-> ~name meta :dispatch-fn) ~@args)]
              (fn [session#]
                (let [[dispatch-val# _#] (df# session#)]
-                 (if-let [f# (get @a# dispatch-val#)]
+                 (if-let [f# (or (get @a# dispatch-val#)
+                                 (some
+                                  (fn [[k# f#]]
+                                    (when (isa? @~hierarchy dispatch-val# k#)
+                                      f#))
+                                  @a#))]
                    ((f# ~@args) session#)
                    (throw+
                     {:reason :missing-method
@@ -104,7 +142,7 @@
                      :session session#}
                     "Missing plan-multi %s dispatch for %s"
                     ~(clojure.core/name name)
-                     (pr-str dispatch-val#)))))))))))
+                    (pr-str dispatch-val#)))))))))))
 
 (defn
   ^{:internal true :indent 2}
@@ -136,14 +174,28 @@
      [nil ~sym]))
 
 ;;; ## Session Accessors
+(defn target
+  "The target-node."
+  [session]
+  [(session/target session) session])
+
+(defn target-node
+  "The target-node."
+  [session]
+  [(session/target-node session) session])
 
 (defn target-id
   "Id of the target-node (unique for provider)."
   [session]
   [(session/target-id session) session])
 
+(defn target-name
+  "Name of the target-node."
+  [session]
+  [(node/hostname (session/target-node session)) session])
+
 (defn admin-user
-  "Id of the target-node (unique for provider)."
+  "Id of the target-node."
   [session]
   [(session/admin-user session) session])
 
@@ -185,6 +237,12 @@
   (fn [session]
     [(session/nodes-with-role session role) session]))
 
+(defn role->nodes-map
+  "A map from role to nodes."
+  []
+  (fn [session]
+    [(session/role->nodes-map session) session]))
+
 (defn packager
   [session]
   [(session/packager session) session])
@@ -199,6 +257,11 @@
   [session]
   [(session/is-64bit? session) session])
 
+(defn target-flag?
+  "Returns a DelayedFunction that is a predicate for whether the flag is set"
+  [flag]
+  (delayed-fn #(execute/target-flag? % (keyword (name flag)))))
+
 ;;; ## Settings
 (defn get-settings
   "Retrieve the settings for the specified host facility. The instance-id allows
@@ -212,13 +275,25 @@
   ([facility]
      (get-settings facility {})))
 
+(defn get-node-settings
+  "Retrieve the settings for the `facility` on the `node`. The instance-id
+   allows the specification of specific instance of the facility. If passed a
+   nil `instance-id`, then `:default` is used"
+  ([node facility {:keys [instance-id default] :as options}]
+     (fn [session]
+       [(plan-state/get-settings
+         (:plan-state session) (node/id node) facility options)
+        session]))
+  ([node facility]
+     (get-node-settings node facility {})))
+
 (defn assoc-settings
   "Set the settings for the specified host facility. The instance-id allows
    the specification of specific instance of the facility (the default is
    :default)."
   ([facility kv-pairs {:keys [instance-id] :as options}]
      (fn [session]
-       [session
+       [kv-pairs
         (update-in
          session [:plan-state]
          plan-state/assoc-settings

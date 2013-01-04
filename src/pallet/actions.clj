@@ -5,11 +5,14 @@
    [pallet.script.lib :as lib]
    [pallet.stevedore :as stevedore])
   (:use
+   [clojure.set :only [intersection]]
    pallet.actions-impl
-   [pallet.action :only [defaction with-action-options enter-scope leave-scope]]
+   [pallet.action
+    :only [clj-action defaction with-action-options enter-scope leave-scope]]
    [pallet.argument :only [delayed]]
-   [pallet.crate :only [packager]]
-   [pallet.monad :only [let-s phase-pipeline]]
+   [pallet.crate :only [role->nodes-map packager target]]
+   [pallet.monad :only [let-s phase-pipeline phase-pipeline-no-context]]
+   [pallet.monad.state-monad :only [m-when m-result]]
    [pallet.node-value :only [node-value]]
    [pallet.script.lib :only [set-flag-value]]
    [pallet.utils :only [apply-map tmpfile]]))
@@ -63,8 +66,10 @@
                           ["test" condition])
                       (~'echo @~'?))))])]
        (if-action ~(if is-script?
-                     `(delayed [s#]
-                        (= (-> (node-value ~nv s#) :flag-values ~nv-kw) "0"))
+                     ;; `(delayed [s#]
+                     ;;    (= (-> (node-value ~nv s#) :flag-values ~nv-kw) "0"))
+                     ;; `(delayed [~'&session] ~condition)
+                     `(= (-> (deref ~nv) :flag-values ~nv-kw) "0")
                      condition))
        enter-scope
        ~@crate-fns-or-actions
@@ -100,6 +105,29 @@
        enter-scope
        ~@crate-fns-or-actions
        leave-scope)))
+
+(defmacro return-value-expr
+  "Creates an action that can transform return values"
+  [[& return-values] & body]
+  (let [session (gensym "session")]
+    `((clj-action [~session]
+        [(let [~@(mapcat #(vector % `(node-value ~% ~session)) return-values)]
+           (logging/debugf "return-value-expr %s" ~(vec return-values))
+           ~@body)
+         ~session]))))
+
+(defaction assoc-settings
+  "Set the settings for the specified host facility. The instance-id allows
+   the specification of specific instance of the facility (the default is
+   :default)."
+  [facility kv-pairs & {:keys [instance-id]}])
+
+(defaction update-settings
+  "Update the settings for the specified host facility. The instance-id allows
+   the specification of specific instance of the facility (the default is
+   :default)."
+  [facility options-or-f & args]
+  {:arglists '[[facility options f & args] [facility f & args]]})
 
 ;;; # Simple File Management
 (defaction file
@@ -307,7 +335,7 @@ Content can also be copied from a blobstore.
   {:pre [path]}
   (verify-local-file-exists local-file)
   (let-s
-    [_ (when local-file
+    [_ (m-when local-file
          (transfer-file local-file (str path ".new")))
      f (with-action-options local-file-options
          (let-s
@@ -337,8 +365,9 @@ Content can also be copied from a blobstore.
    another action."
   [path]
   (let-s
-    [r (exec-script (~lib/cat ~path))]
-    (fn [session] (:out (node-value r session)))))
+    [nv (exec-script (~lib/cat ~path))
+     c (return-value-expr [nv] (:out nv))]
+    c))
 
 ;;; # Remote Directory Content
 
@@ -391,7 +420,7 @@ Content can also be copied from a blobstore.
            :as options}]
   (verify-local-file-exists local-file)
   (let-s
-    [_ (when local-file
+    [_ (m-when local-file
          (transfer-file local-file (str path "-content")))
      f (with-action-options local-file-options
          (let-s
@@ -453,6 +482,8 @@ Content can also be copied from a blobstore.
   {:always-before package
    :execution :aggregated}
   [action & options])
+
+(def package-source-changed-flag "packagesourcechanged")
 
 (defaction package-source
   "Control package sources.
@@ -534,9 +565,10 @@ Content can also be copied from a blobstore.
                as set, for example, by remote-file :flag-on-changed
    - :sequence-start  a sequence of [sequence-number level level ...], where
                       sequence number determines the order in which services
-                      are started within a level."
-  [service-name & {:keys [action if-flag if-stopped]
-                   :or {action :start}
+                      are started within a level.
+   - :service-impl    either :initd or :upstart"
+  [service-name & {:keys [action if-flag if-stopped service-impl]
+                   :or {action :start service-impl :initd}
                    :as options}])
 
 (defmacro with-service-restart
@@ -548,17 +580,17 @@ Content can also be copied from a blobstore.
        ~@body
        (service service# :action :start))))
 
-(defn init-script
-  "Install an init script.  Sources as for remote-file."
+(defn service-script
+  "Install a service script.  Sources as for remote-file."
   [service-name & {:keys [action url local-file remote-file link
                           content literal template values md5 md5-url
-                          force]
-                   :or {action :create}
+                          force service-impl]
+                   :or {action :create service-impl :initd}
                    :as options}]
   (phase-pipeline init-script {}
     (apply-map
      pallet.actions/remote-file
-     (init-script-path service-name)
+     (service-script-path service-impl service-name)
      :owner "root" :group "root" :mode "0755"
      (merge {:action action} options))))
 
@@ -589,3 +621,29 @@ Content can also be copied from a blobstore.
    condition]
   (let [service-name (or service-name "retryable")]
     `(loop-until ~service-name ~condition ~max-retries ~standoff)))
+
+;;; target filters
+
+(defn ^:internal one-node-filter
+  [role->nodes [role & roles]]
+  (let [role-nodes (set (role->nodes role))
+        m (select-keys role->nodes roles)]
+    (or (first (reduce
+                (fn [result [role nodes]]
+                  (intersection result (set nodes)))
+                role-nodes
+                m))
+        (first role-nodes))))
+
+(defmacro on-one-node
+  "Execute the body on just one node of the specified roles. If there is no
+   node in the union of nodes for all the roles, the nodes for the first role
+   are used."
+  [roles & body]
+  `(phase-pipeline-no-context
+    on-one-node {:roles roles}
+    [target# target
+     role->nodes# (role->nodes-map)]
+    (pipeline-when
+     (= target# (one-node-filter role->nodes# ~roles))
+     ~@body)))

@@ -7,10 +7,36 @@
    [pallet.common.logging.logutils :only [logging-threshold-fixture]]
    [pallet.compute :only [nodes]]
    [pallet.core.user :only [default-private-key-path default-public-key-path]]
+   [pallet.environment :only [get-environment]]
    [pallet.node :only [group-name]]
+   [pallet.session.verify :only [add-session-verification-key]]
    [pallet.test-utils :only [make-localhost-compute]]))
 
 (use-fixtures :once (logging-threshold-fixture))
+
+(deftest extend-specs-test
+  (testing "simple ordering"
+    (is (= [2 (add-session-verification-key {:v 3})]
+           ((-> (extend-specs
+                 {:phases {:a (fn [session]
+                                [2 (update-in session [:v] inc)])}}
+                 [{:phases {:a (fn [session]
+                                 [1 (update-in session [:v] * 2)])}}])
+                :phases
+                :a)
+            (add-session-verification-key {:v 1})))))
+  (testing "multiple extends"
+    (is (= [3 (add-session-verification-key {:v 6})]
+           ((-> (extend-specs
+                 {:phases {:a (fn [session]
+                                [3 (update-in session [:v] inc)])}}
+                 [{:phases {:a (fn [session]
+                                 [1 (update-in session [:v] * 2)])}}
+                  {:phases {:a (fn [session]
+                                 [2 (update-in session [:v] + 3)])}}])
+                :phases
+                :a)
+            (add-session-verification-key {:v 1}))))))
 
 (deftest lift-test
   (testing "lift on group"
@@ -33,6 +59,20 @@
       (some
        (partial re-find #"/bin")
        (->> (mapcat :results @op) (mapcat :out))))))
+
+(deftest lift-with-environment-test
+  (testing "lift with environment"
+    (let [compute (make-localhost-compute)
+          group (group-spec (group-name (first (nodes compute))))
+          a (atom nil)
+          op (lift [group]
+                   :phase (plan-fn
+                            [k (get-environment [:my-key])]
+                            (fn [session] (reset! a k)))
+                   :compute compute
+                   :environment {:my-key 1})]
+      (is @op)
+      (is (= 1 @a)))))
 
 (deftest make-user-test
   (let [username "userfred"

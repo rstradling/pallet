@@ -18,6 +18,11 @@
 ;;   [session]
 ;;   (:phase session))
 
+(defn target
+  "Target server."
+  [session]
+  (-> session :server))
+
 (defn target-node
   "Target compute service node."
   [session]
@@ -82,7 +87,12 @@
   "All nodes in the same tag as the target-node, or with the specified
   group-name."
   [session group-name]
-  (filter #((:group-name %) group-name) (:service-state session)))
+  (->>
+   (:service-state session)
+   (filter
+    #(or (= (:group-name %) group-name)
+         (when-let [group-names (:group-names %)] (group-names group-name))))
+   (map :node)))
 
 (comment
   (defn groups-with-role
@@ -100,6 +110,15 @@
    (fn [node]
      (when-let [roles (:roles node)]
        (roles role)))
+   (:service-state session)))
+
+(defn role->nodes-map
+  "Returns a map from role to nodes."
+  [session]
+  (reduce
+   (fn [m node]
+     (reduce (fn [m role] (update-in m [role] conj node)) m (:roles node)))
+   {}
    (:service-state session)))
 
 (defn packager

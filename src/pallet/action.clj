@@ -162,7 +162,8 @@
         action-name (vary-meta
                      action-name assoc
                      :arglists (list 'quote [args])
-                     :defonce true)
+                     :defonce true
+                     :pallet/action true)
         action-symbol (symbol
                        (or (namespace action-name) (name (ns-name *ns*)))
                        (name action-name))
@@ -260,6 +261,14 @@
    becomes an action with a single, :default, implementation."
   [sym f]
   (let [action (declare-action sym {:execution :aggregated-crate-fn})]
+    (implement-action* action :default {} f)
+    action))
+
+(defn declare-collected-crate-action
+  "Declare an action for an collected crate function. A delayed crate function
+   becomes an action with a single, :default, implementation."
+  [sym f]
+  (let [action (declare-action sym {:execution :collected-crate-fn})]
     (implement-action* action :default {} f)
     action))
 

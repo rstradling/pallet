@@ -1,21 +1,35 @@
 (ns pallet.core.api
   "Base level API for pallet"
   (:require
-   [clojure.tools.logging :as logging])
+   [clojure.java.io :as io]
+   [clojure.string :as string])
   (:use
    [clojure.algo.monads :only [domonad m-map state-m with-monad]]
+   [clojure.tools.logging :only [debugf tracef]]
    [clojure.string :only [blank?]]
    [pallet.action-plan :only [execute stop-execution-on-error translate]]
+   [pallet.common.logging.logutils :as logutils]
    [pallet.compute :only [destroy-nodes-in-group destroy-node nodes run-nodes]]
    [pallet.environment :only [get-for]]
    [pallet.executors :only [default-executor]]
-   [pallet.node :only [image-user tag tag!]]
+   [pallet.node :only [image-user primary-ip tag tag!]]
    [pallet.session.action-plan
     :only [assoc-action-plan get-session-action-plan]]
    [pallet.session.verify :only [add-session-verification-key check-session]]
+   [pallet.utils :only [maybe-assoc]]
    pallet.core.api-impl
    [pallet.core.user :only [*admin-user*]]
    [slingshot.slingshot :only [throw+]]))
+
+(let [v (atom nil)]
+  (defn version
+    "Returns the pallet version."
+    []
+    (or
+     @v
+     (reset! v (System/getProperty "pallet.version"))
+     (reset! v (if-let [version (slurp (io/resource "pallet-version"))]
+                       (string/trim version))))))
 
 (defn service-state
   "Query the available nodes in a `compute-service`, filtering for nodes in the
@@ -23,6 +37,7 @@
   matching node."
   [compute-service groups]
   (let [nodes (remove pallet.node/terminated? (nodes compute-service))]
+    (tracef "service-state %s" (vec nodes))
     (filter identity (map (node->node-map groups) nodes))))
 
 ;;; ## Action Plan Building
@@ -36,13 +51,14 @@
          (map? target-map)
          (or (nil? environment) (map? environment))]}
   (fn action-plan [plan-state]
-    (logging/tracef "action-plan plan-state %s" plan-state)
+    (tracef "action-plan plan-state %s" plan-state)
     (let [session (add-session-verification-key
                    (merge
                     {:user (:user environment *admin-user*)}
                     target-map
                     {:service-state service-state
-                     :plan-state plan-state}))
+                     :plan-state plan-state
+                     :environment environment}))
           [rv session] (plan-fn session)
           _ (check-session session '(plan-fn session))
           [action-plan session] (get-session-action-plan session)
@@ -59,25 +75,27 @@
   [service-state environment phase node]
   {:pre [node]}
   (fn [plan-state]
-    (with-script-for-node (:node node)
-      ((action-plan
-        service-state environment (-> node :phases phase)
-        {:server node})
-       plan-state))))
+    (logutils/with-context [:target (-> node :node primary-ip)]
+      (with-script-for-node (:node node)
+        ((action-plan
+          service-state environment (-> node :phases phase)
+          {:server node})
+         plan-state)))))
 
 (defmethod target-action-plan :group
   [service-state environment phase group]
   {:pre [group]}
   (fn [plan-state]
-    ((action-plan
-      service-state environment (-> group :phases phase)
-      {:group group})
-     plan-state)))
+    (logutils/with-context [:target (-> group :group-name)]
+      ((action-plan
+        service-state environment (-> group :phases phase)
+        {:group group})
+       plan-state))))
 
 (defn action-plans
   [service-state environment phase targets]
   (let [targets-with-phase (filter #(-> % :phases phase) targets)]
-    (logging/tracef
+    (tracef
      "action-plans: phase %s targets %s targets-with-phase %s"
      phase (vec targets) (vec targets-with-phase))
     (with-monad state-m
@@ -105,7 +123,8 @@
   "Returns execution settings based on the environment and the image user."
   [environment]
   (fn [node]
-    {:user (or (image-user (:node node)) (:user environment *admin-user*))
+    {:user (merge (:user environment *admin-user*)
+                  (into {} (filter val (image-user (:node node)))))
      :executor (get-in environment [:algorithms :executor] default-executor)
      :executor-status-fn (get-in environment [:algorithms :execute-status-fn]
                                  #'stop-execution-on-error)}))
@@ -115,15 +134,16 @@
   "Execute the `action-plan` on the `target`."
   [session executor execute-status-fn
    {:keys [action-plan phase target-type target]}]
-  (logging/tracef "execute-action-plan*")
+  (tracef "execute-action-plan*")
   (let [[result session] (execute
-                          action-plan session executor execute-status-fn)]
-    {:target target
-     :target-type target-type
-     :plan-state (:plan-state session)
-     :result result
-     :phase phase
-     :errors (seq (remove (complement :error) result))}))
+                          action-plan session executor execute-status-fn)
+        errors (seq (remove (complement :error) result))
+        value {:target target
+               :target-type target-type
+               :plan-state (:plan-state session)
+               :result result
+               :phase phase}]
+    (maybe-assoc value :errors errors)))
 
 (defmulti execute-action-plan
   "Execute the `action-plan` on the `target`."
@@ -134,27 +154,29 @@
 (defmethod execute-action-plan :node
   [service-state plan-state environment user executor execute-status-fn
    {:keys [action-plan phase target-type target] :as action-plan-map}]
-  (logging/tracef "execute-action-plan :node")
-  (with-script-for-node (:node target)
+  (tracef "execute-action-plan :node")
+  (logutils/with-context [:target (-> target :node primary-ip)]
+    (with-script-for-node (:node target)
+      (execute-action-plan*
+       {:server target
+        :service-state service-state
+        :plan-state plan-state
+        :user user
+        :environment environment}
+       executor execute-status-fn action-plan-map))))
+
+(defmethod execute-action-plan :group
+  [service-state plan-state environment user executor execute-status-fn
+   {:keys [action-plan phase target-type target] :as action-plan-map}]
+  (tracef "execute-action-plan :group")
+  (logutils/with-context [:target (-> target :group-name)]
     (execute-action-plan*
-     {:server target
+     {:group target
       :service-state service-state
       :plan-state plan-state
       :user user
       :environment environment}
      executor execute-status-fn action-plan-map)))
-
-(defmethod execute-action-plan :group
-  [service-state plan-state environment user executor execute-status-fn
-   {:keys [action-plan phase target-type target] :as action-plan-map}]
-  (logging/tracef "execute-action-plan :group")
-  (execute-action-plan*
-   {:group target
-    :service-state service-state
-    :plan-state plan-state
-    :user user
-    :environment environment}
-   executor execute-status-fn action-plan-map))
 
 ;;; ## Calculation of node count adjustments
 (defn group-delta
@@ -249,10 +271,10 @@
   "Removes `nodes` from `group`. If `all` is true, then all nodes for the group
   are being removed."
   [compute-service group {:keys [nodes all]}]
-  (logging/debugf "remove-nodes")
+  (debugf "remove-nodes")
   (if all
     (destroy-nodes-in-group compute-service (name (:group-name group)))
-    (doseq [node nodes] (destroy-node compute-service node))))
+    (doseq [node nodes] (destroy-node compute-service (:node node)))))
 
 ;;; # Node state tagging
 
@@ -278,3 +300,11 @@
     (get
      (read-or-empty-map (tag (:node node) state-tag-name))
      (keyword (name state-name)))))
+
+;;; # Exception reporting
+(defn throw-operation-exception
+  "If the operation has a logged exception, throw it. This will block on the
+   operation being complete or failed."
+  [operation]
+  (when-let [e (:exception @operation)]
+    (throw e)))

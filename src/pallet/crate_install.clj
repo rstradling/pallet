@@ -1,12 +1,18 @@
 (ns pallet.crate-install
   "Install methods for crates"
   (:use
+   [clojure.tools.logging :only [debugf tracef]]
    [pallet.action :only [with-action-options]]
-   [pallet.actions :only [add-rpm package-source package remote-directory]]
-   [pallet.crate :only [get-settings defmulti-plan defmethod-plan]]
+   [pallet.actions
+    :only [add-rpm package package-source package-manager
+           package-source-changed-flag pipeline-when remote-directory]]
+   [pallet.crate :only [get-settings defmulti-plan defmethod-plan target-flag?]]
    [pallet.crate.package-repo :only [repository-packages rebuild-repository]]
    [pallet.monad :only [chain-s let-s]]
-   [pallet.utils :only [apply-map]]))
+   [pallet.monad.state-monad :only [m-map]]
+   [pallet.utils :only [apply-map]])
+  (:require
+   [pallet.actions :as actions]))
 
 ;;; ## Install helpers
 (defmulti-plan install
@@ -21,13 +27,20 @@
   [{:keys [packages]} (get-settings facility {:instance-id instance-id})]
   (map package packages))
 
-;; install based on the setting's :package-source and :packages keys
+;; Install based on the setting's :package-source and :packages keys.
+;; This will cause a package update if the package source definition
+;; changes.
 (defmethod-plan install :package-source
   [facility instance-id]
-  [{:keys [package-source packages]}
+  [{:keys [package-source packages package-options]}
    (get-settings facility {:instance-id instance-id})]
-  (package-source (:name package-source) package-source)
-  (map package packages))
+  (m-result (debugf "package source %s %s" facility package-source))
+  (apply-map actions/package-source (:name package-source) package-source)
+  [modified? (m-result (target-flag? package-source-changed-flag))]
+  (pipeline-when modified?
+   (package-manager :update))
+  (m-result (tracef "packages %s options %s" (vec packages) package-options))
+  (m-map #(apply-map package % package-options) packages))
 
 ;; install based on a rpm
 (defmethod-plan install :rpm
@@ -67,5 +80,5 @@
        debs))
      (repository-packages)
      (rebuild-repository path)))
-  (package-source (:name package-source) package-source)
+  (apply-map actions/package-source (:name package-source) package-source)
   (map package packages))

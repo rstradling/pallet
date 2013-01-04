@@ -11,21 +11,21 @@
 
 (defn pipeline
   [a b]
-  (chain-s a b ))
+  (chain-s a b))
 
 (defmethod merge-key :merge-state-monad
   [_ _ val-in-result val-in-latter]
-  (merge-with pipeline val-in-latter val-in-result))
+  (merge-with pipeline val-in-result val-in-latter))
 
 (def
   ^{:doc "Map from key to merge algorithm. Specifies how specs are merged."}
   merge-spec-algorithm
   {:phases :merge-state-monad
    :roles :union
-   :group-name :union})
+   :group-names :union})
 
 (defn merge-specs
-  "Merge specs, using comp for :phases"
+  "Merge specs using the specified algorithms."
   [algorithms a b]
   (merge-keys algorithms a b))
 
@@ -34,13 +34,14 @@
   {:internal true}
   [group-name]
   (fn has-group-name? [node]
-    (= group-name (node/group-name node))))
+    (when-let [node-group (node/group-name node)]
+      (= group-name (name node-group)))))
 
 (defn node-in-group?
   "Check if a node satisfies a group's node-predicate."
   {:internal true}
   [node group]
-  ((:node-predicate group (node-has-group-name? (name (node/group-name node))))
+  ((:node-predicate group (node-has-group-name? (name (:group-name group))))
    node))
 
 (defn node->node-map
@@ -48,7 +49,11 @@
   {:internal true}
   [groups]
   (fn [node]
-    (when-let [groups (seq (filter (partial node-in-group? node) groups))]
+    (when-let [groups (seq (->>
+                            groups
+                            (filter (partial node-in-group? node))
+                            (map #(assoc-in % [:group-names]
+                                            (set [(:group-name %)])))))]
       (reduce
        (partial merge-specs merge-spec-algorithm)
        {:node node}

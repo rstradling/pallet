@@ -40,6 +40,12 @@
   "Return the canonical version of the specified path"
   [arg])
 (script/defimpl canonical-path :default [arg] (readlink -f ~arg))
+(script/defimpl canonical-path [#{:darwin :os-x}] [arg]
+  (chain-and
+   (var ccwd @(pwd))
+   (cd @(dirname ~arg))
+   (println (quoted (str @(pwd -P) "/" @(basename ~arg))))
+   (cd @ccwd)))
 
 
 (script/defscript rm [file & {:keys [recursive force]}])
@@ -180,10 +186,12 @@
          ~(stevedore/map-to-arg-string {:status quiet :check check})
          @(basename ~file))) ")"))
 (script/defimpl md5sum-verify [#{:darwin :os-x}] [file & {:as options}]
-  (chain-and
-   (var testfile @(~cut ~file :delimiter " " :fields 2))
-   (var md5 @(~cut ~file :delimiter " " :fields 1))
-   ("test" (quoted @("/sbin/md5" -q @testfile)) == (quoted @md5))))
+  ("(" (chain-and
+        (var testfile @(~cut ~file :delimiter " " :fields 2))
+        (var md5 @(~cut ~file :delimiter " " :fields 1))
+        (cd @(dirname ~file))
+        ("test" (quoted @("/sbin/md5" -q @testfile)) == (quoted @md5))
+        @mres) ")"))
 
 (script/defscript backup-option [])
 (script/defimpl backup-option :default []
@@ -513,7 +521,7 @@
 ;;; aptitude
 (script/defimpl update-package-list [#{:aptitude}] [& {:keys [] :as options}]
   (chain-or
-   (aptitude update ~(stevedore/map-to-arg-string options)) true))
+   (aptitude update -q=2 -y ~(stevedore/map-to-arg-string options)) true))
 
 (script/defimpl upgrade-all-packages [#{:aptitude}] [& options]
   (aptitude upgrade -q -y ~(stevedore/option-args options)))
@@ -759,6 +767,9 @@
 (script/defscript etc-init [])
 (script/defimpl etc-init :default [] "/etc/init.d")
 (script/defimpl etc-init [:pacman] [] "/etc/rc.d")
+
+(script/defscript upstart-script-dir [])
+(script/defimpl upstart-script-dir :default [] "/etc/init")
 
 ;; Some of the packagers, like brew, are "add-ons" in the sense that they are
 ;; outside of the base system.  These paths refer to locations of packager

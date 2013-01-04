@@ -118,7 +118,8 @@
 
 (defn execute-phase-with-image-user
   [service-state environment targets plan-state phase]
-  (logging/tracef "execute-phase-with-image-user plan-state %s" plan-state)
+  (logging/debugf
+   "execute-phase-with-image-user on %s target(s)" (count targets))
   (dofsm execute-phase-with-image-user
     [[results plan-state] (build-and-execute-phase
                            service-state plan-state environment
@@ -131,6 +132,7 @@
   "Execute a function of service-state on nodes that don't have the specified
   state flag set. On successful completion the nodes have the state flag set."
   [targets execute-f state-flag]
+  (logging/debugf "execute-on-unflagged state-flag %s" state-flag)
   (dofsm execute-on-unflagged
     [[results plan-state] (execute-f
                            (filter
@@ -157,6 +159,9 @@
 (defn create-group-nodes
   "Create nodes for groups."
   [compute-service environment group-counts]
+  (logging/debugf
+   "create-group-nodes %s %s %s"
+   compute-service environment group-counts)
   (dofsm create-group-nodes
     [results (map*
               (map
